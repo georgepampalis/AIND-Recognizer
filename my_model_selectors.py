@@ -77,8 +77,42 @@ class SelectorBIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        ##raise NotImplementedError
 
+##        dict_of_states_with_scores = dict()
+
+        best_score = float('+inf')
+        best_model = None
+
+        for n in range(self.min_n_components, self.max_n_components+1):
+
+            model = self.base_model(n)
+
+            length_of_data = len(self.X)
+            num_of_features = len(self.X[0]) # shown also as d
+            num_of_states = n
+
+            # Number of free parameters: p = n*(n-1) + (n-1) + 2*n*d = n**2 - 1 + 2*n*d
+            num_of_params = num_of_states**2 - 1 + 2*num_of_states*num_of_features
+
+            try:
+                logL = model.score(self.X, self.lengths)
+
+                bic = -2*logL + num_of_params * np.log(length_of_data)
+
+##                dict_of_states_with_scores[n] = bic
+                
+                if bic < best_score:
+                    best_score = bic
+                    best_model = model
+
+            except Exception:
+                pass
+
+##        state_with_best_bic = min(dict_of_states_with_scores.items(), key=lambda x: x[1])[0]
+
+##        return self.base_model(state_with_best_bic)
+        return best_model
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion
@@ -91,10 +125,73 @@ class SelectorDIC(ModelSelector):
     '''
 
     def select(self):
+        """ select the best model for self.this_word based on
+        DIC score for n between self.min_n_components and self.max_n_components
+
+        :return: GaussianHMM object
+        """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        ##raise NotImplementedError
+
+        # #
+        # print()
+        # print('{}:'.format(self.this_word), len(self.sequences))
+        # #
+
+##        dict_of_states_with_scores = dict()
+
+        best_score = float('-inf')
+        best_model = None
+
+        for n in range(self.min_n_components, self.max_n_components+1):
+
+            model = self.base_model(n)
+
+            try:
+                logL = model.score(self.X, self.lengths)
+
+                # Initialize accumulative score & count of other words
+                word_log_score = 0
+                word_count = 0
+
+                # Loop through  other words
+                for word, data in self.hwords.items():
+                    if word != self.this_word:
+
+                        word_X, word_lengths = data
+
+                        try:
+                            word_logL = model.score(word_X, word_lengths)
+                            word_log_score += word_logL
+                            word_count += 1
+                        except Exception:
+                            pass
+
+                # Compute average score of other words
+                a = 1 # regularizer
+                avg_score_of_other_words = a / word_count * word_log_score
+                dic = logL - avg_score_of_other_words
+
+##                dict_of_states_with_scores[n] = dic
+                
+                if dic > best_score:
+                    best_score = dic
+                    best_model = model
+
+            except Exception:
+                pass
+
+        # #
+        # for item in dict_of_states_with_scores.items():
+        #    print(item[0], item[1])
+        # #
+
+##        state_with_best_dic = max(dict_of_states_with_scores.items(), key=lambda x: x[1])[0]
+
+##        return self.base_model(state_with_best_dic)
+        return best_model
 
 
 class SelectorCV(ModelSelector):
@@ -106,4 +203,84 @@ class SelectorCV(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection using CV
-        raise NotImplementedError
+        ##raise NotImplementedError
+
+        # Initialize variables
+        best_score = float('-inf')
+        best_model = None
+        best_state = None
+
+        # Set maximum number of folds
+        num_folds = 5
+        # Set minimum number of folds
+        my_num_of_folds = min(len(self.sequences), num_folds)
+
+        # Consider case of single sequence
+        if my_num_of_folds == 1:
+            #self.X, self.lengths = self.sequences
+            for n in range(self.min_n_components, self.max_n_components+1):
+
+                try:
+                    model = self.base_model(n)
+                    logL = model.score(self.X, self.lengths)
+
+                    if logL > best_score:
+                        best_score = logL
+                        best_model = model
+
+                except Exception:
+                    pass
+
+            return best_model
+        # Implement KFold CV for multiple sequences 
+        kf = KFold(n_splits=my_num_of_folds, shuffle=True, random_state=self.random_state)
+
+        ##
+        #print()
+        #print('{}:'.format(self.this_word), len(self.sequences))
+        ##
+
+##        dict_of_states_with_scores = dict()
+
+        for n in range(self.min_n_components, self.max_n_components+1):
+            
+##            dict_of_states_with_scores[n] = list()
+            list_of_scores = []
+
+            try:
+                for train_idx, test_idx in kf.split(self.sequences):
+
+                    # Train
+                    self.X, self.lengths = combine_sequences(train_idx, self.sequences)
+                    model = self.base_model(n)
+                    # Test & Score
+                    test_X, test_lengths = combine_sequences(test_idx, self.sequences)
+                    logL = model.score(test_X, test_lengths)
+
+##                    dict_of_states_with_scores[n].append(logL)
+                    list_of_scores.append(logL)
+                
+                if np.mean(list_of_scores) > best_score:
+                    best_score = np.mean(list_of_scores)
+                    #best_model = model
+                    best_state = n
+
+            except Exception:
+                pass
+
+        ##
+        #for item in dict_of_states_with_scores.items():
+        #    print(item[0], len(item[1]), item[1])
+        ##
+
+        # Choose number of states with maximum average logLikelihood
+##        best_n = max(dict_of_states_with_scores.items(), key=lambda x: np.mean(x[1]))[0]
+
+##        return self.base_model(best_n)
+
+        self.X, self.lengths = self.hwords[self.this_word]
+        if best_state:
+        	best_model = self.base_model(best_state)
+        	return best_model
+        else:
+        	return None
